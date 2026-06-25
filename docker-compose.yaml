@@ -1,0 +1,75 @@
+name: basic-rag
+
+services:
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama-data:/root/.ollama
+    environment:
+      - OLLAMA_HOST=0.0.0.0
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    # Uncomment the block below to enable GPU on Linux with Nvidia hardware.
+    # This requires installing the NVIDIA Container Toolkit.
+    # Note: Docker on Apple Silicon cannot access the GPU.
+    #
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: all
+    #           capabilities: [gpu]
+
+  ollama-init:
+    image: ollama/ollama:latest
+    container_name: ollama-init
+    volumes:
+      - ollama-data:/root/.ollama
+    environment:
+      - OLLAMA_HOST=http://ollama:11434
+    entrypoint: ["/bin/sh", "-c", "ollama pull llama3.2 && ollama pull nomic-embed-text"]
+    depends_on:
+      ollama:
+        condition: service_healthy
+  
+  db:
+    image: pgvector/pgvector:pg17
+    container_name: pgvector
+    restart: always
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: tai-stack
+    ports:
+      - "5432:5432"
+    volumes:
+      - ./pgvector/init-scripts:/docker-entrypoint-initdb.d
+      # Uncomment if persistence between runs is desired
+      #- pgdata:/var/lib/postgresql/data
+  
+  rag:
+    build:
+      context: ./
+      dockerfile: Dockerfile
+    container_name: rag
+    environment:
+      - WATCH_DIRECTORY=/app/docs
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./docs:/app/docs
+
+networks:
+  ai-net:
+    driver: bridge
+
+volumes:
+  ollama-data:
+  anythingllm-data:
