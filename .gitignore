@@ -1,0 +1,19 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+.uv/
+
+# Env files
+.env
+.env.*
+
+# Runtime-generated document directory
+docs/
+
+# macOS
+.DS_Store
+
+# Docker volumes (if bind-mounted locally)
+pgdata/
