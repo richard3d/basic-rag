@@ -94,11 +94,11 @@ curl -X POST http://localhost:8000/query-rag \
 {"response": "The capital of France is Paris."}
 ```
 
+While this example project does not include a UI, you can also enter prompts by hitting the `/query-rag` endpoint via the swagger page at [http://localhost:8000/docs](http://localhost:8000/docs)
+
 ## GPU Acceleration
 
 CPU inference works out of the box. For GPU support on Linux with an NVIDIA card, uncomment the `deploy` block in `docker-compose.yaml` under the `ollama` service and install the [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html).
-
-> **Note:** Docker on Apple Silicon cannot access the GPU — CPU inference is used automatically on macOS.
 
 ## Key Concepts Explored
 
@@ -115,38 +115,18 @@ CPU inference works out of the box. For GPU support on Linux with an NVIDIA card
 
 Currently, `query.py` and `embed.py` call Ollama directly using `langchain_ollama`'s `ChatOllama` and `OllamaEmbeddings`. This works, but it couples the application code to Ollama as a provider. Swapping to a different model or backend requires touching the RAG code itself.
 
-A cleaner approach is to introduce a gateway like [LiteLLM](https://github.com/BerriAI/litellm) between the RAG service and Ollama. LiteLLM exposes an OpenAI-compatible REST API in front of any backend (Ollama, OpenAI, Anthropic, Bedrock, etc.), so the RAG service can speak a single standard interface regardless of what's running underneath:
+In a future iteration on this project I would use a gateway like LiteLLM between the RAG service and Ollama so the RAG service can speak to a single standard interface (via OpenAI-compatible REST API) regardless of what's running underneath. The primary advantages would include:
 
-```python
-# Instead of this (coupled to Ollama)
-from langchain_ollama import ChatOllama, OllamaEmbeddings
-llm = ChatOllama(base_url=OLLAMA_BASE_URL, model="llama3.2")
-
-# Do this (coupled to an OpenAI-compatible interface)
-from langchain_openai import ChatOpenAI, OpenAIEmbeddings
-llm = ChatOpenAI(base_url=LITELLM_BASE_URL, api_key=LITELLM_API_KEY, model="llama3.2")
-```
-
-The benefits:
-
-- **Provider portability** — switching from a local Ollama model to a cloud provider becomes a configuration change in the gateway, not a code change in the RAG service
-- **Centralized model routing** — all model traffic flows through one place, making it straightforward to add logging, rate limiting, cost tracking, or fallback models
-- **Consistent interface** — the OpenAI-compatible API is now the de facto standard for LLM interoperability; building against it future-proofs the integration
+- **Provider portability**: switching from a local Ollama model to a cloud provider becomes a configuration change in the gateway, not a code change in the RAG service
+- **Centralized model routing**: all model traffic flows through one place, making it straightforward to add logging, rate limiting, cost tracking, or fallback models
+- **Consistent interface**: the OpenAI-compatible API is considered the standard for LLM interoperability; building against it would be considered best practice
 
 **Use LangChain's `PGVector` store instead of raw SQL**
 
-`embed.py` and `query.py` manage the database directly — DDL statements to create the table, raw `psycopg` calls to insert embeddings, and a hand-written cosine similarity query using pgvector's `<=>` operator. This was intentional for learning purposes: writing the SQL by hand makes the mechanics of vector search visible.
+`embed.py` and `query.py` manage the database directly — DDL statements to create the table, raw `psycopg` calls to insert embeddings, and a hand-written cosine similarity query using pgvector's `<=>` operator. I chose this more "rustic" approach merely for learning purposes. Writing the SQL by hand let me explore the mechanics of vector search and try different operators.
 
-In a production system, this would be replaced by LangChain's [`PGVector`](https://python.langchain.com/docs/integrations/vectorstores/pgvector/) vector store (already a dependency in `pyproject.toml` as `langchain-postgres`). It handles schema creation, upserts, and similarity search internally, reducing the database layer to a few lines:
-
-```python
-from langchain_postgres.vectorstores import PGVector
-
-store = PGVector(embeddings=embedder, connection=DB_CONNECTION_STR, collection_name="docs")
-store.add_texts(chunks)                          # replaces embed.py's insert loop
-results = store.similarity_search(question, k=3) # replaces query.py's raw SQL
-```
+In a more professional setup, I would use LangChain's `PGVector` vector store from `langchain-postgres` library. In fact, I had added it as a dependency in `pyproject.toml` at one point before deciding to go down the more primitive route.
 
 **Add an ORM layer**
 
-Related to the above: the direct `psycopg` calls in `embed.py` mix connection management, schema definition, and business logic in one place. Introducing an ORM like [SQLAlchemy](https://www.sqlalchemy.org/) (which `langchain-postgres` already uses internally) would separate these concerns — models describe the schema, sessions manage transactions, and the application code never writes SQL strings. This also makes it easier to add new tables (e.g. ingestion history, per-document metadata) without the schema management spreading across multiple files.
+Related to the above, the direct `psycopg` calls in `embed.py` are not ideal. Introducing an ORM (which `langchain-postgres` already uses internally) would simplify and abstract away typical DB-related concerns like model/schema definitions, session management and transactions. Typically application code would never write SQL strings. This also makes it easier to add new tables (e.g. ingestion history, per-document metadata) without the schema management intermingling with business logic.
