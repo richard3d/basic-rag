@@ -80,6 +80,8 @@ Services:
 echo "The capital of France is Paris." > ./docs/facts.txt
 ```
 
+Optionally, copy the example text on Scottish History from `./resources/` into `./docs/`
+
 The file observer picks it up immediately and logs the processing steps.
 
 **Query the RAG system:**
@@ -93,6 +95,7 @@ curl -X POST http://localhost:8000/query-rag \
 ```json
 {"response": "The capital of France is Paris."}
 ```
+Note: If you are using the provided example resource. Try prompting `Tell me about Henry Mackenzie`
 
 While this example project does not include a UI, you can also enter prompts by hitting the `/query-rag` endpoint via the swagger page at [http://localhost:8000/docs](http://localhost:8000/docs)
 
